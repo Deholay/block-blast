@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import './App.css'
-import blockBlastLogo from '/block-blast-logo.png'
 
 // 類型定義
 interface Block {
@@ -440,7 +439,7 @@ function App(): React.JSX.Element {
     <div className="app">
       <div className="game-header">
         <img 
-          src={blockBlastLogo} 
+          src="block-blast-logo.png" 
           alt="Block Blast Logo" 
           className="game-logo"
         />
