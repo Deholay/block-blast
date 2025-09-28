@@ -501,7 +501,7 @@ function App(): React.JSX.Element {
     <div className="app">
       <div className="game-header">
         <img 
-          src="/block-blast-logo.png" 
+          src="block-blast-logo.png" 
           alt="Block Blast Logo" 
           className="game-logo"
         />
