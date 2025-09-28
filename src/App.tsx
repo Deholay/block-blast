@@ -285,24 +285,39 @@ function App(): React.JSX.Element {
 
 
 
-  // 拖拽開始
-  const handleDragStart = (e: React.MouseEvent, block: Block): void => {
+  // 拖拽開始（支援滑鼠和觸控）
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent, block: Block): void => {
     e.preventDefault()
     setDraggedBlock(block)
     setIsDragging(true)
-    const rect = (e.target as HTMLElement).getBoundingClientRect()
+    
+    // 計算方塊的中心點作為偏移量
+    const blockWidth = Math.max(...block.shape.map(row => row.length)) * 22
+    const blockHeight = block.shape.length * 22
+    
     setDragOffset({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
+      x: blockWidth / 2,
+      y: blockHeight / 2
     })
+    
+    // 獲取觸控或滑鼠位置
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    
+    // 設置初始位置
+    setMousePosition({ x: clientX, y: clientY })
   }
 
-  // 拖拽移動
-  const handleDragMove = (e: MouseEvent): void => {
+  // 拖拽移動（支援滑鼠和觸控）
+  const handleDragMove = (e: MouseEvent | TouchEvent): void => {
     if (!isDragging || !draggedBlock) return
 
-    // 更新滑鼠位置
-    setMousePosition({ x: e.clientX, y: e.clientY })
+    // 獲取觸控或滑鼠位置
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+
+    // 更新位置
+    setMousePosition({ x: clientX, y: clientY })
 
     const gameGrid = document.querySelector('.game-grid')
     if (gameGrid) {
@@ -310,41 +325,68 @@ function App(): React.JSX.Element {
       
       // 擴大檢測範圍，讓預覽更靈敏
       const expandedRect = {
-        left: rect.left - 50,
-        right: rect.right + 50,
-        top: rect.top - 50,
-        bottom: rect.bottom + 50
+        left: rect.left - 80,
+        right: rect.right + 80,
+        top: rect.top - 80,
+        bottom: rect.bottom + 80
       }
       
       // 檢查滑鼠是否在擴大的範圍內
-      if (e.clientX >= expandedRect.left && e.clientX <= expandedRect.right &&
-          e.clientY >= expandedRect.top && e.clientY <= expandedRect.bottom) {
+      if (clientX >= expandedRect.left && clientX <= expandedRect.right &&
+          clientY >= expandedRect.top && clientY <= expandedRect.bottom) {
         
         // 計算相對於網格的位置
-        const relativeX = e.clientX - rect.left
-        const relativeY = e.clientY - rect.top
+        const relativeX = clientX - rect.left
+        const relativeY = clientY - rect.top
         
         const x = Math.floor(relativeX / CELL_SIZE)
         const y = Math.floor(relativeY / CELL_SIZE)
 
-        // 確保在網格範圍內
-        if (x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE) {
-          setPreviewPosition({ x, y })
-        } else {
-          // 如果超出網格但在擴大範圍內，顯示最接近的有效位置
-          const clampedX = Math.max(0, Math.min(GRID_SIZE - 1, x))
-          const clampedY = Math.max(0, Math.min(GRID_SIZE - 1, y))
-          setPreviewPosition({ x: clampedX, y: clampedY })
+        // 智能預覽：尋找最佳預覽位置
+        const findBestPreviewPosition = (targetX: number, targetY: number): PreviewPosition => {
+          // 確保在有效範圍內
+          const clampedX = Math.max(0, Math.min(GRID_SIZE - 1, targetX))
+          const clampedY = Math.max(0, Math.min(GRID_SIZE - 1, targetY))
+          
+          // 嘗試原始位置
+          if (canPlaceBlock(draggedBlock, clampedX, clampedY)) {
+            return { x: clampedX, y: clampedY }
+          }
+          
+          // 嘗試周圍位置
+          const offsets = [
+            [-1, -1], [-1, 0], [-1, 1],
+            [0, -1],           [0, 1],
+            [1, -1],  [1, 0],  [1, 1]
+          ]
+          
+          for (const [dx, dy] of offsets) {
+            const newX = Math.max(0, Math.min(GRID_SIZE - 1, clampedX + dx))
+            const newY = Math.max(0, Math.min(GRID_SIZE - 1, clampedY + dy))
+            
+            if (canPlaceBlock(draggedBlock, newX, newY)) {
+              return { x: newX, y: newY }
+            }
+          }
+          
+          return { x: -1, y: -1 }
         }
+        
+        const bestPosition = findBestPreviewPosition(x, y)
+        setPreviewPosition(bestPosition)
       } else {
         setPreviewPosition({ x: -1, y: -1 })
       }
     }
   }
 
-  // 拖拽結束
-  const handleDragEnd = (e: MouseEvent): void => {
+  // 拖拽結束（支援滑鼠和觸控）
+  const handleDragEnd = (e: MouseEvent | TouchEvent): void => {
     if (!draggedBlock || !isDragging) return
+
+    // 獲取觸控或滑鼠位置
+    const clientX = 'touches' in e ? e.changedTouches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.changedTouches[0].clientY : e.clientY
 
     const gameGrid = document.querySelector('.game-grid')
     if (gameGrid) {
@@ -352,27 +394,55 @@ function App(): React.JSX.Element {
       
       // 使用相同的擴大檢測範圍
       const expandedRect = {
-        left: rect.left - 50,
-        right: rect.right + 50,
-        top: rect.top - 50,
-        bottom: rect.bottom + 50
+        left: rect.left - 80,
+        right: rect.right + 80,
+        top: rect.top - 80,
+        bottom: rect.bottom + 80
       }
       
       // 檢查是否在擴大範圍內
-      if (e.clientX >= expandedRect.left && e.clientX <= expandedRect.right &&
-          e.clientY >= expandedRect.top && e.clientY <= expandedRect.bottom) {
+      if (clientX >= expandedRect.left && clientX <= expandedRect.right &&
+          clientY >= expandedRect.top && clientY <= expandedRect.bottom) {
         
-        const relativeX = e.clientX - rect.left
-        const relativeY = e.clientY - rect.top
+        const relativeX = clientX - rect.left
+        const relativeY = clientY - rect.top
         
         const x = Math.floor(relativeX / CELL_SIZE)
         const y = Math.floor(relativeY / CELL_SIZE)
 
-        // 確保在有效範圍內並嘗試放置
-        const clampedX = Math.max(0, Math.min(GRID_SIZE - 1, x))
-        const clampedY = Math.max(0, Math.min(GRID_SIZE - 1, y))
+        // 智能放置：嘗試多個位置
+        const tryPlaceAt = (targetX: number, targetY: number): boolean => {
+          // 確保在有效範圍內
+          const clampedX = Math.max(0, Math.min(GRID_SIZE - 1, targetX))
+          const clampedY = Math.max(0, Math.min(GRID_SIZE - 1, targetY))
+          
+          // 嘗試原始位置
+          if (canPlaceBlock(draggedBlock, clampedX, clampedY)) {
+            handleBlockPlace(draggedBlock, clampedX, clampedY)
+            return true
+          }
+          
+          // 嘗試周圍的位置（容錯機制）
+          const offsets = [
+            [-1, -1], [-1, 0], [-1, 1],
+            [0, -1],           [0, 1],
+            [1, -1],  [1, 0],  [1, 1]
+          ]
+          
+          for (const [dx, dy] of offsets) {
+            const newX = Math.max(0, Math.min(GRID_SIZE - 1, clampedX + dx))
+            const newY = Math.max(0, Math.min(GRID_SIZE - 1, clampedY + dy))
+            
+            if (canPlaceBlock(draggedBlock, newX, newY)) {
+              handleBlockPlace(draggedBlock, newX, newY)
+              return true
+            }
+          }
+          
+          return false
+        }
         
-        handleBlockPlace(draggedBlock, clampedX, clampedY)
+        tryPlaceAt(x, y)
       }
     }
 
@@ -381,34 +451,26 @@ function App(): React.JSX.Element {
     setPreviewPosition({ x: -1, y: -1 })
   }
 
-  // 點擊放置方塊（只在非拖拽狀態下）
-  const handleBlockClick = (block: Block): void => {
-    if (isDragging) return
-    
-    // 找到第一個可用的位置
-    for (let y = 0; y < GRID_SIZE; y++) {
-      for (let x = 0; x < GRID_SIZE; x++) {
-        if (canPlaceBlock(block, x, y)) {
-          handleBlockPlace(block, x, y)
-          return
-        }
-      }
-    }
-  }
 
-  // 添加全域滑鼠事件監聽器
+  // 添加全域滑鼠和觸控事件監聽器
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => handleDragMove(e)
     const handleMouseUp = (e: MouseEvent) => handleDragEnd(e)
+    const handleTouchMove = (e: TouchEvent) => handleDragMove(e)
+    const handleTouchEnd = (e: TouchEvent) => handleDragEnd(e)
 
     if (isDragging) {
       document.addEventListener('mousemove', handleMouseMove)
       document.addEventListener('mouseup', handleMouseUp)
+      document.addEventListener('touchmove', handleTouchMove, { passive: false })
+      document.addEventListener('touchend', handleTouchEnd)
     }
 
     return () => {
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
+      document.removeEventListener('touchmove', handleTouchMove)
+      document.removeEventListener('touchend', handleTouchEnd)
     }
   }, [isDragging, draggedBlock])
 
@@ -439,7 +501,7 @@ function App(): React.JSX.Element {
     <div className="app">
       <div className="game-header">
         <img 
-          src="block-blast-logo.png" 
+          src="/block-blast-logo.png" 
           alt="Block Blast Logo" 
           className="game-logo"
         />
@@ -516,12 +578,12 @@ function App(): React.JSX.Element {
                   style={{
                     backgroundColor: draggedBlock.color,
                     position: 'absolute',
-                    left: colIndex * 20,
-                    top: rowIndex * 20,
-                    width: 18,
-                    height: 18,
+                    left: colIndex * CELL_SIZE,
+                    top: rowIndex * CELL_SIZE,
+                    width: CELL_SIZE - 2,
+                    height: CELL_SIZE - 2,
                     border: '1px solid #333',
-                    borderRadius: '2px'
+                    borderRadius: '4px'
                   }}
                 />
               ) : null
@@ -570,39 +632,43 @@ function App(): React.JSX.Element {
         
         <div className="blocks-container">
           <h3>可放置的方塊</h3>
-          <div className="blocks">
-            {currentBlocks.map(block => (
-              <div
-                key={block.id}
-                className="block"
-                onMouseDown={(e) => handleDragStart(e, block)}
-                onClick={() => handleBlockClick(block)}
-                style={{ 
-                  cursor: isDragging && draggedBlock?.id === block.id ? 'grabbing' : 'grab',
-                  opacity: isDragging && draggedBlock?.id === block.id ? 0.5 : 1
-                }}
-              >
-                {block.shape.map((row, rowIndex) =>
-                  row.map((cell, colIndex) => (
-                    cell ? (
-                      <div
-                        key={`${rowIndex}-${colIndex}`}
-                        className="block-cell"
-                        style={{
+          <div className="blocks-wrapper">
+            <div className="blocks">
+              {currentBlocks.map(block => (
+                <div
+                  key={block.id}
+                  className="block"
+                  onMouseDown={(e) => handleDragStart(e, block)}
+                  onTouchStart={(e) => handleDragStart(e, block)}
+                  style={{ 
+                    cursor: isDragging && draggedBlock?.id === block.id ? 'grabbing' : 'grab',
+                    opacity: isDragging && draggedBlock?.id === block.id ? 0.5 : 1,
+                    touchAction: 'none'
+                  }}
+                >
+                  {block.shape.map((row, rowIndex) =>
+                    row.map((cell, colIndex) => (
+                      cell ? (
+                        <div
+                          key={`${rowIndex}-${colIndex}`}
+                          className="block-cell"
+                          style={{
                           backgroundColor: block.color,
                           position: 'absolute',
-                          left: colIndex * 20,
-                          top: rowIndex * 20,
-                          width: 18,
-                          height: 18,
-                          border: '1px solid #333'
-                        }}
-                      />
-                    ) : null
-                  ))
-                )}
-              </div>
-            ))}
+                          left: colIndex * 22 + 10,
+                          top: rowIndex * 22 + 10,
+                          width: 20,
+                          height: 20,
+                          border: '1px solid #333',
+                          borderRadius: '3px'
+                          }}
+                        />
+                      ) : null
+                    ))
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
